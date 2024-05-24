@@ -45,7 +45,8 @@ public class AppletTest extends BaseTest {
         // BigInteger w1 = m.multiply(o1).add(Rx.multiply(v1)).mod(q);
         byte[] w1u1 = pm.sign(
                 new byte[32],
-                new byte[16], // key
+                new byte[16], // encKey
+                new byte[16], // macKey
                 new byte[16], // iv
                 u1,
                 v1.multiply(Rx).mod(q),

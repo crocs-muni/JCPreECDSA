@@ -13,10 +13,10 @@ public class JCPreECDSA extends Applet {
     private ECCurve curve;
     private final MessageDigest md = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
-    private byte[] key = new byte[16];
-
-    Cipher cipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
-    AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+    private Cipher cipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+    private Signature mac = Signature.getInstance(Signature.ALG_AES_CMAC_128, false);
+    private AESKey encKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+    private AESKey macKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
 
     private BigNat bn1, bn2;
     private final byte[] ramArray = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_RESET);
@@ -97,7 +97,8 @@ public class JCPreECDSA extends Applet {
         bn1 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         bn2 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
 
-        aesKey.setKey(key, (short) 0);
+        encKey.setKey(new byte[16], (short) 0);
+        macKey.setKey(new byte[16], (short) 0);
 
         initialized = true;
     }
@@ -107,13 +108,18 @@ public class JCPreECDSA extends Applet {
     }
 
     private void sign(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || IV || u1 || v1 * Rx || o1
+        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || IV || u1 || v1 * Rx || o1 || MAC
+
+        mac.init(macKey, Signature.MODE_VERIFY);
+        if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) (96 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16 + 96), (short) 16)) {
+            ISOException.throwIt((short) 0x1234);
+        }
 
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
         bn1.fromByteArray(ramArray, (short) 0, (short) 32);
 
         // decrypt in place
-        cipher.init(aesKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16);
+        cipher.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16);
         cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 96, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16));
 
         bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 * 3 + 16), (short) 32);
