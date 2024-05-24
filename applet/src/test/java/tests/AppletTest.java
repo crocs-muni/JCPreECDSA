@@ -10,13 +10,13 @@ import java.util.Arrays;
 
 public class AppletTest extends BaseTest {
     public AppletTest() {
+        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
         setCardType(CardType.JCARDSIMLOCAL);
         setSimulateStateful(false);
     }
 
     @Test
     public void testSign() throws Exception {
-        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
         BigInteger q = ProtocolManager.G.getCurve().getOrder();
 
         ProtocolManager pm = new ProtocolManager(connect());
@@ -45,6 +45,8 @@ public class AppletTest extends BaseTest {
         // BigInteger w1 = m.multiply(o1).add(Rx.multiply(v1)).mod(q);
         byte[] w1u1 = pm.sign(
                 new byte[32],
+                new byte[16], // key
+                new byte[16], // iv
                 u1,
                 v1.multiply(Rx).mod(q),
                 o1

@@ -10,6 +10,9 @@ import org.bouncycastle.jce.spec.ECPublicKeySpec;
 import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.Assertions;
 
+import javax.crypto.Cipher;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import java.math.BigInteger;
@@ -39,11 +42,13 @@ public class ProtocolManager {
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
     }
 
-    public byte[] sign(byte[] message, BigInteger u, BigInteger v, BigInteger o) throws Exception {
+    public byte[] sign(byte[] message, byte[] key, byte[] iv, BigInteger u, BigInteger v, BigInteger o) throws Exception {
         byte[] data = message;
-        data = Util.concat(data, encodeBigInteger(u));
-        data = Util.concat(data, encodeBigInteger(v));
-        data = Util.concat(data, encodeBigInteger(o));
+        byte[] payload = encodeBigInteger(u);
+        payload = Util.concat(payload, encodeBigInteger(v));
+        payload = Util.concat(payload, encodeBigInteger(o));
+        payload = ProtocolManager.encrypt(key, iv, payload);
+        data = Util.concat(data, payload);
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SIGN,
@@ -107,5 +112,15 @@ public class ProtocolManager {
 
 
         return ecdsa.verify(signature);
+    }
+
+    public static byte[] encrypt(byte[] key, byte[] iv, byte[] message) throws Exception {
+        SecretKeySpec keySpec = new SecretKeySpec(key, "AES");
+        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
+
+        byte[] ct = cipher.doFinal(message);
+        return Util.concat(iv, ct);
     }
 }

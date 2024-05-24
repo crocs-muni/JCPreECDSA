@@ -2,6 +2,7 @@ package jcpreecdsa;
 
 import javacard.framework.*;
 import javacard.security.*;
+import javacardx.crypto.Cipher;
 import jcpreecdsa.jcmathlib.*;
 
 
@@ -11,6 +12,11 @@ public class JCPreECDSA extends Applet {
     private ResourceManager rm;
     private ECCurve curve;
     private final MessageDigest md = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+
+    private byte[] key = new byte[16];
+
+    Cipher cipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+    AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
 
     private BigNat bn1, bn2;
     private final byte[] ramArray = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_RESET);
@@ -91,6 +97,8 @@ public class JCPreECDSA extends Applet {
         bn1 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         bn2 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
 
+        aesKey.setKey(key, (short) 0);
+
         initialized = true;
     }
 
@@ -99,18 +107,22 @@ public class JCPreECDSA extends Applet {
     }
 
     private void sign(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || u1 || v1 * Rx || o1
+        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || IV || u1 || v1 * Rx || o1
 
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
         bn1.fromByteArray(ramArray, (short) 0, (short) 32);
 
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96), (short) 32);
+        // decrypt in place
+        cipher.init(aesKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16);
+        cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 96, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16));
+
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 * 3 + 16), (short) 32);
         bn1.modMult(bn2, curve.rBN);
 
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 32);
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 * 2 + 16), (short) 32);
         bn1.modAdd(bn2, curve.rBN);
 
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 32);
 
         bn1.copyToByteArray(apduBuffer, (short) 0);
         bn2.copyToByteArray(apduBuffer, (short) 32);
