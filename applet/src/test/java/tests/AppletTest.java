@@ -31,11 +31,11 @@ public class AppletTest extends BaseTest {
 
         BigInteger[] Rxs = new BigInteger[100];
         PreSignature[] localPreSignatures = new PreSignature[100];
-        byte[][] cardPreSignatures = new byte[128][100];
+        byte[][] cardPreSignatures = new byte[100][128];
 
         for(int i = 0; i < 100; ++i) {
             byte[] iv = new byte[16];
-            iv[15] = (byte) i;
+            iv[15] = (byte) (i + 1);
 
             BigInteger r1 = ProtocolManager.randomBigInt(32);
             BigInteger r2 = ProtocolManager.randomBigInt(32);
@@ -60,6 +60,8 @@ public class AppletTest extends BaseTest {
             localPreSignatures[i] = localPreSignature;
             cardPreSignatures[i] = cardPreSignature.wrap(encKey, macKey, iv);
         }
+
+        pm.setup(encKey, macKey);
 
 
         // Untrusted signing

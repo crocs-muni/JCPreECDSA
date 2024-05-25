@@ -3,10 +3,12 @@ package jcpreecdsa;
 public class Consts {
     public static final byte CLA_JCPREECDSA = (byte) 0x00;
 
-    public static final byte INS_RESET = (byte) 0x00;
+    public static final byte INS_SETUP = (byte) 0x00;
     public static final byte INS_SIGN = (byte) 0x01;
 
     public final static short E_ALREADY_INITIALIZED = (short) 0xee00;
+    public final static short E_PRESIGNATURE_REUSE = (short) 0xee01;
+    public final static short E_PRESIGNATURE_INVALID = (short) 0xee02;
 
     public final static short SW_Exception = (short) 0xff01;
     public final static short SW_ArrayIndexOutOfBoundsException = (short) 0xff02;

@@ -4,18 +4,12 @@ import cz.muni.fi.crocs.rcard.client.CardManager;
 import cz.muni.fi.crocs.rcard.client.Util;
 import javacard.framework.ISO7816;
 import jcpreecdsa.Consts;
-import org.bouncycastle.crypto.engines.AESEngine;
-import org.bouncycastle.crypto.macs.CMac;
-import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.spec.ECParameterSpec;
 import org.bouncycastle.jce.spec.ECPublicKeySpec;
 import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.Assertions;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import java.math.BigInteger;
@@ -33,12 +27,13 @@ public class ProtocolManager {
         this.cm = cm;
     }
 
-    public void reset() throws Exception {
+    public void setup(byte[] encKey, byte[] macKey) throws Exception {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
-                Consts.INS_RESET,
+                Consts.INS_SETUP,
                 0,
-                0
+                0,
+                Util.concat(encKey, macKey)
         );
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assertions.assertNotNull(responseAPDU);
@@ -80,8 +75,8 @@ public class ProtocolManager {
     }
 
     public static byte[] rawToDer(BigInteger r, BigInteger s) {
-        byte[] rBytes = ProtocolManager.encodeBigInteger(r);
-        byte[] sBytes = ProtocolManager.encodeBigInteger(s);
+        byte[] rBytes = r.toByteArray();
+        byte[] sBytes = s.toByteArray();
 
         int totalLength = rBytes.length + sBytes.length + 4 + 2; // 4 bytes for the DER tags and lengths, and 2 bytes for each integer tag and its length
         byte[] der = new byte[totalLength];

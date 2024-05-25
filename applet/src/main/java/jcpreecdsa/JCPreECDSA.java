@@ -17,6 +17,7 @@ public class JCPreECDSA extends Applet {
     private Signature mac = Signature.getInstance(Signature.ALG_AES_CMAC_128, false);
     private AESKey encKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
     private AESKey macKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+    private byte[] lastIv = new byte[16];
 
     private BigNat bn1, bn2;
     private final byte[] ramArray = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_RESET);
@@ -43,8 +44,8 @@ public class JCPreECDSA extends Applet {
 
         try {
             switch (apdu.getBuffer()[ISO7816.OFFSET_INS]) {
-                case Consts.INS_RESET:
-                    reset(apdu);
+                case Consts.INS_SETUP:
+                    setup(apdu);
                     break;
                 case Consts.INS_SIGN:
                     sign(apdu);
@@ -97,22 +98,27 @@ public class JCPreECDSA extends Applet {
         bn1 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         bn2 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
 
-        encKey.setKey(new byte[16], (short) 0);
-        macKey.setKey(new byte[16], (short) 0);
-
         initialized = true;
     }
 
-    private void reset(APDU apdu) {
+    private void setup(APDU apdu) {
+        byte[] apduBuffer = apdu.getBuffer(); // 16B encKey || 16B macKey
+        encKey.setKey(apduBuffer, ISO7816.OFFSET_CDATA);
+        macKey.setKey(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 16));
+        mac.init(macKey, Signature.MODE_VERIFY);
+        Util.arrayFillNonAtomic(lastIv, (short) 0, (short) lastIv.length, (byte) 0);
+
         apdu.setOutgoing();
     }
 
     private void sign(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || IV || u1 || v1 * Rx || o1 || MAC
+        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || 16B IV || 32B u1 || 32B v1 * Rx || 32B o1 || 16B MAC
 
-        mac.init(macKey, Signature.MODE_VERIFY);
+        if (Util.arrayCompare(lastIv, (short) 0, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16) != -1) {
+            ISOException.throwIt(Consts.E_PRESIGNATURE_REUSE);
+        }
         if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) (96 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16 + 96), (short) 16)) {
-            ISOException.throwIt((short) 0x1234);
+            ISOException.throwIt(Consts.E_PRESIGNATURE_INVALID);
         }
 
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
@@ -130,11 +136,11 @@ public class JCPreECDSA extends Applet {
 
         bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 32);
 
+        // w1 = H(m) * o1 + v1 * R.x
         bn1.copyToByteArray(apduBuffer, (short) 0);
+        // u1
         bn2.copyToByteArray(apduBuffer, (short) 32);
 
-        // w1 = H(m) * o1 + v1 * R.x
-        // return w1, u1
         apdu.setOutgoingAndSend((short) 0, (short) 64);
     }
 }
