@@ -45,14 +45,8 @@ public class ProtocolManager {
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
     }
 
-    public byte[] sign(byte[] message, byte[] encKey, byte[] macKey, byte[] iv, BigInteger u, BigInteger v, BigInteger o) throws Exception {
-        byte[] data = message;
-        byte[] payload = encodeBigInteger(u);
-        payload = Util.concat(payload, encodeBigInteger(v));
-        payload = Util.concat(payload, encodeBigInteger(o));
-        payload = ProtocolManager.encrypt(encKey, iv, payload);
-        data = Util.concat(data, payload);
-        data = Util.concat(data, ProtocolManager.mac(macKey, payload));
+    public byte[] sign(byte[] message, byte[] preSignature) throws Exception {
+        byte[] data = Util.concat(message, preSignature);
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SIGN,
@@ -115,24 +109,5 @@ public class ProtocolManager {
         ecdsa.update(message);
 
         return ecdsa.verify(signature);
-    }
-
-    public static byte[] encrypt(byte[] key, byte[] iv, byte[] message) throws Exception {
-        SecretKeySpec keySpec = new SecretKeySpec(key, "AES");
-        IvParameterSpec ivSpec = new IvParameterSpec(iv);
-        Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
-
-        byte[] ct = cipher.doFinal(message);
-        return Util.concat(iv, ct);
-    }
-
-    public static byte[] mac(byte[] key, byte[] message) throws Exception {
-        CMac mac = new CMac(new AESEngine());
-        mac.init(new KeyParameter(key));
-        mac.update(message, 0, message.length);
-        byte[] out = new byte[16];
-        mac.doFinal(out, 0);
-        return out;
     }
 }
