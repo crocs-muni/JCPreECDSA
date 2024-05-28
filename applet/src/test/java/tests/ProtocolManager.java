@@ -27,7 +27,7 @@ public class ProtocolManager {
         this.cm = cm;
     }
 
-    public void setup(byte[] encKey, byte[] macKey) throws Exception {
+    public ECPoint setup(byte[] encKey, byte[] macKey) throws Exception {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SETUP,
@@ -38,6 +38,7 @@ public class ProtocolManager {
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assertions.assertNotNull(responseAPDU);
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
+        return ecSpec.getCurve().decodePoint(responseAPDU.getData());
     }
 
     public byte[] sign(byte[] message, byte[] preSignature) throws Exception {
@@ -45,6 +46,37 @@ public class ProtocolManager {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SIGN,
+                0,
+                0,
+                data
+        );
+        ResponseAPDU responseAPDU = cm.transmit(cmd);
+        Assertions.assertNotNull(responseAPDU);
+        Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
+        return responseAPDU.getData();
+    }
+
+    public byte[] sign1(byte[] message, BigInteger t1c, byte[] triple) throws Exception {
+        byte[] data = Util.concat(message, encodeBigInteger(t1c), triple);
+        CommandAPDU cmd = new CommandAPDU(
+                Consts.CLA_JCPREECDSA,
+                Consts.INS_SIGN1,
+                0,
+                0,
+                data
+        );
+        ResponseAPDU responseAPDU = cm.transmit(cmd);
+        Assertions.assertNotNull(responseAPDU);
+        Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
+        return responseAPDU.getData();
+    }
+
+    public byte[] sign2(BigInteger Rx, BigInteger a1, BigInteger b1, byte[] triple) throws Exception {
+        byte[] data = Util.concat(encodeBigInteger(Rx), encodeBigInteger(a1), encodeBigInteger(b1));
+        data = Util.concat(data, triple);
+        CommandAPDU cmd = new CommandAPDU(
+                Consts.CLA_JCPREECDSA,
+                Consts.INS_SIGN2,
                 0,
                 0,
                 data
