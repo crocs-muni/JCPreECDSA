@@ -74,37 +74,6 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] sign1(byte[] message, BigInteger t1c, byte[] triple) throws Exception {
-        byte[] data = Util.concat(message, encodeBigInteger(t1c), triple);
-        CommandAPDU cmd = new CommandAPDU(
-                Consts.CLA_JCPREECDSA,
-                Consts.INS_SIGN1,
-                0,
-                0,
-                data
-        );
-        ResponseAPDU responseAPDU = cm.transmit(cmd);
-        Assertions.assertNotNull(responseAPDU);
-        Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
-        return responseAPDU.getData();
-    }
-
-    public byte[] sign2(BigInteger Rx, BigInteger a1, BigInteger b1, byte[] triple) throws Exception {
-        byte[] data = Util.concat(encodeBigInteger(Rx), encodeBigInteger(a1), encodeBigInteger(b1));
-        data = Util.concat(data, triple);
-        CommandAPDU cmd = new CommandAPDU(
-                Consts.CLA_JCPREECDSA,
-                Consts.INS_SIGN2,
-                0,
-                0,
-                data
-        );
-        ResponseAPDU responseAPDU = cm.transmit(cmd);
-        Assertions.assertNotNull(responseAPDU);
-        Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
-        return responseAPDU.getData();
-    }
-
     public void setT(byte[] triple) throws Exception {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
@@ -131,10 +100,10 @@ public class ProtocolManager {
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
     }
 
-    public byte[] msign1(byte[] message, BigInteger t1c) throws Exception {
+    public byte[] sign1(byte[] message, BigInteger t1c) throws Exception {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
-                Consts.INS_MSIGN1,
+                Consts.INS_SIGN1,
                 0,
                 0,
                 Util.concat(message, encodeBigInteger(t1c))
@@ -145,13 +114,13 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] msign2(BigInteger a1, BigInteger b1, ECPoint R, BigInteger commitment) throws Exception {
+    public byte[] sign2(BigInteger a1, BigInteger b1, ECPoint R, BigInteger commitment) throws Exception {
         byte[] data = Util.concat(encodeBigInteger(a1), encodeBigInteger(b1));
         data = Util.concat(data, R.getEncoded(false));
         data = Util.concat(data, encodeBigInteger(commitment));
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
-                Consts.INS_MSIGN2,
+                Consts.INS_SIGN2,
                 0,
                 0,
                 data
@@ -162,12 +131,12 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] msign3(BigInteger c1hat, ECPoint R1hat, BigInteger commitment) throws Exception {
+    public byte[] sign3(BigInteger c1hat, ECPoint R1hat, BigInteger commitment) throws Exception {
         byte[] data = Util.concat(ProtocolManager.encodeBigInteger(c1hat), R1hat.getEncoded(false));
         data = Util.concat(data, encodeBigInteger(commitment));
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
-                Consts.INS_MSIGN3,
+                Consts.INS_SIGN3,
                 0,
                 0,
                 data
@@ -178,11 +147,11 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] msign4(BigInteger a1hat, BigInteger b1hat) throws Exception {
+    public byte[] sign4(BigInteger a1hat, BigInteger b1hat) throws Exception {
         byte[] data = Util.concat(ProtocolManager.encodeBigInteger(a1hat), ProtocolManager.encodeBigInteger(b1hat));
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
-                Consts.INS_MSIGN4,
+                Consts.INS_SIGN4,
                 0,
                 0,
                 data

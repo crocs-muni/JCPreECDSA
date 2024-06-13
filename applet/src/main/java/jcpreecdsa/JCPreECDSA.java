@@ -20,7 +20,6 @@ public class JCPreECDSA extends Applet {
     private AESKey macKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
     private byte[] lastIv = new byte[16];
     private byte[] m = new byte[32];
-    private byte[] k2 = new byte[32];
 
     private BigNat bn1, bn2, bn3;
     private ECPoint point;
@@ -32,7 +31,6 @@ public class JCPreECDSA extends Applet {
     private byte[] u = new byte[192];
     private BigNat c2hat, a2hat, b2hat, pres2;
     private ECPoint R2hat;
-    private byte[] Rx = new byte[32];
     private byte[] comm1 = new byte[32];
     private byte[] comm2 = new byte[32];
     private final byte[] ramArray = JCSystem.makeTransientByteArray((short) 65, JCSystem.CLEAR_ON_RESET);
@@ -65,29 +63,23 @@ public class JCPreECDSA extends Applet {
                 case Consts.INS_SIGN:
                     sign(apdu);
                     break;
-                case Consts.INS_SIGN1:
-                    sign1(apdu);
-                    break;
-                case Consts.INS_SIGN2:
-                    sign2(apdu);
-                    break;
                 case Consts.INS_SET_T:
                     setT(apdu);
                     break;
                 case Consts.INS_SET_U:
                     setU(apdu);
                     break;
-                case Consts.INS_MSIGN1:
-                    msign1(apdu);
+                case Consts.INS_SIGN1:
+                    sign1(apdu);
                     break;
-                case Consts.INS_MSIGN2:
-                    msign2(apdu);
+                case Consts.INS_SIGN2:
+                    sign2(apdu);
                     break;
-                case Consts.INS_MSIGN3:
-                    msign3(apdu);
+                case Consts.INS_SIGN3:
+                    sign3(apdu);
                     break;
-                case Consts.INS_MSIGN4:
-                    msign4(apdu);
+                case Consts.INS_SIGN4:
+                    sign4(apdu);
                     break;
                 default:
                     ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -212,89 +204,6 @@ public class JCPreECDSA extends Applet {
     }
 
     private void sign1(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || 32B t1c || 16B IV || 32B a || 32B b || 32B c || 16B MAC
-
-        if (Util.arrayCompare(lastIv, (short) 0, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 16) != -1) {
-            ISOException.throwIt(Consts.E_PRESIGNATURE_REUSE);
-        }
-        if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) (96 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16 + 96), (short) 16)) {
-            ISOException.throwIt(Consts.E_PRESIGNATURE_INVALID);
-        }
-        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), lastIv, (short) 0, (short) 16);
-
-        md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
-        Util.arrayCopyNonAtomic(ramArray, (short) 0, m, (short) 0, (short) 32);
-
-        // decrypt in place
-        cipher.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 16);
-        cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16), (short) 96, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16));
-
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16 + 64), (short) 32);
-        bn1.copyToByteArray(apduBuffer, (short) 0); // WARNING: first 32 bytes of APDU are rewritten now on
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
-        bn1.modAdd(bn2, curve.rBN);
-        bn1.modInv(curve.rBN);
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16 + 32), (short) 32);
-
-        // R2 = c^-1*b2*G
-        point.setW(curve.G, (short) 0, (short) curve.G.length);
-        point.multiplication(bn1);
-        point.multiplication(bn2);
-        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16), k2, (short) 0, (short) 32);
-        point.getW(apduBuffer, (short) 32);
-
-        apdu.setOutgoingAndSend((short) 0, (short) (65 + 32));
-    }
-
-    private void sign2(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B Rx || 32B a1 || 32B b1 || 16B IV || 32B a || 32B b || 32B c || 16B MAC
-
-        if (Util.arrayCompare(lastIv, (short) 0, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96), (short) 16) != -1) {
-            ISOException.throwIt(Consts.E_PRESIGNATURE_REUSE);
-        }
-        if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96), (short) (96 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16 + 96), (short) 16)) {
-            ISOException.throwIt(Consts.E_PRESIGNATURE_INVALID);
-        }
-
-        Util.arrayCopyNonAtomic(apduBuffer, ISO7816.OFFSET_CDATA, ramArray, (short) 0, (short) 32); // Rx
-
-        // decrypt in place
-        cipher.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96), (short) 16);
-        cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16), (short) 96, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16));
-
-        bn3.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16), (short) 32);
-        bn3.modAdd(bn1, curve.rBN);
-        bn2.fromByteArray(k2, (short) 0, (short) 32);
-        bn3.modAdd(bn2, curve.rBN);
-        bn3.copyToByteArray(apduBuffer, (short) 0);
-
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 32);
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16 + 32), (short) 32);
-        bn2.modAdd(bn1, curve.rBN);
-        bn2.modAdd(secretKey, curve.rBN);
-        bn2.copyToByteArray(apduBuffer, (short) 32);
-
-        bn3.modMult(secretKey, curve.rBN);
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16), (short) 32);
-        bn2.modMult(bn1, curve.rBN);
-        bn3.modSub(bn2, curve.rBN);
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96 + 16 + 64), (short) 32);
-        bn3.modAdd(bn1, curve.rBN);
-
-        bn2.fromByteArray(ramArray, (short) 0, (short) 32);
-        bn3.modMult(bn2, curve.rBN);
-
-        bn1.fromByteArray(m, (short) 0, (short) 32);
-        bn2.fromByteArray(k2, (short) 0, (short) 32);
-        bn1.modMult(bn2, curve.rBN);
-        bn1.modAdd(bn3, curve.rBN);
-        bn1.copyToByteArray(apduBuffer, (short) 64);
-
-        apdu.setOutgoingAndSend((short) 0, (short) 96);
-    }
-
-    private void msign1(APDU apdu) {
         byte[] apduBuffer = apdu.getBuffer(); // 32B m, 32B t1.c
 
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
@@ -324,9 +233,8 @@ public class JCPreECDSA extends Applet {
         apdu.setOutgoingAndSend((short) 0, (short) (32 + 65 + 32));
     }
 
-    private void msign2(APDU apdu) {
+    private void sign2(APDU apdu) {
         byte[] apduBuffer = apdu.getBuffer(); // 32B a1 || 32B b1 || 65B R || H(c1hat, R1hat)
-        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 1), Rx, (short) 0, (short) 32);
         Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 65), comm1, (short) 0, (short) 32);
 
         bn1.fromByteArray(t, (short) (4 * 32), (short) 32);
@@ -373,7 +281,7 @@ public class JCPreECDSA extends Applet {
         bn3.modMult(bn2, curve.rBN);
         pres2.modAdd(bn3, curve.rBN);
         // Rx * s2'
-        bn3.fromByteArray(Rx, (short) 0, (short) 32);
+        bn3.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 1), (short) 32);
         pres2.modMult(bn3, curve.rBN);
 
         bn1.copyToByteArray(apduBuffer, (short) 0);
@@ -389,7 +297,7 @@ public class JCPreECDSA extends Applet {
         apdu.setOutgoingAndSend((short) 0, (short) 128);
     }
 
-    private void msign3(APDU apdu) {
+    private void sign3(APDU apdu) {
         byte[] apduBuffer = apdu.getBuffer(); // 32B c1hat || 65B R1hat || 32B H(a1hat, b1hat)
 
         md.reset();
@@ -417,7 +325,7 @@ public class JCPreECDSA extends Applet {
         apdu.setOutgoingAndSend((short) 0, (short) (32 + 32 + 65));
     }
 
-    private void msign4(APDU apdu) {
+    private void sign4(APDU apdu) {
         byte[] apduBuffer = apdu.getBuffer(); // 32B a1hat || 32B b1hat
 
         md.reset();
