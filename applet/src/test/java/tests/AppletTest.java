@@ -17,7 +17,7 @@ public class AppletTest extends BaseTest {
     }
 
     @Test
-    public void testSign() throws Exception {
+    public void testPreSignatures() throws Exception {
         BigInteger q = ProtocolManager.G.getCurve().getOrder();
 
         ProtocolManager pm = new ProtocolManager(connect());
@@ -38,24 +38,21 @@ public class AppletTest extends BaseTest {
             byte[] iv = new byte[16];
             iv[15] = (byte) (i + 1);
 
-            BigInteger r1 = ProtocolManager.randomBigInt(32);
-            BigInteger r2 = ProtocolManager.randomBigInt(32);
-            BigInteger o1 = ProtocolManager.randomBigInt(32);
-            BigInteger o2 = ProtocolManager.randomBigInt(32);
-            ECPoint R = ProtocolManager.G.multiply(r1).add(ProtocolManager.G.multiply(r2));
-            BigInteger Rx = R.normalize().getRawXCoord().toBigInteger();
+            BigInteger k1 = ProtocolManager.randomBigInt(32);
+            BigInteger k2 = ProtocolManager.randomBigInt(32);
+            BigInteger k = k1.add(k2).mod(q);
+            ECPoint R = ProtocolManager.G.multiply(k.modInverse(q));
+            BigInteger Rx = R.normalize().getAffineXCoord().toBigInteger();
 
-            BigInteger u1 = ProtocolManager.randomBigInt(32);
-            BigInteger u2 = r1.add(r2).multiply(o1.add(o2)).subtract(u1).mod(q);
+            BigInteger y1 = ProtocolManager.randomBigInt(32);
+            BigInteger y2 = x1.add(x2).multiply(k).subtract(y1).mod(q);
 
-            BigInteger v1 = ProtocolManager.randomBigInt(32);
-            BigInteger v2 = x1.add(x2).multiply(o1.add(o2)).subtract(v1).mod(q);
+            BigInteger z1 = Rx.multiply(y1).mod(q);
+            BigInteger z2 = Rx.multiply(y2).mod(q);
 
-            BigInteger v1r = v1.multiply(Rx).mod(q);
-            BigInteger v2r = v2.multiply(Rx).mod(q);
 
-            PreSignature localPreSignature = new PreSignature(u1, v1r, o1);
-            PreSignature cardPreSignature = new PreSignature(u2, v2r, o2);
+            PreSignature localPreSignature = new PreSignature(k1, z1);
+            PreSignature cardPreSignature = new PreSignature(k2, z2);
 
             Rxs[i] = Rx;
             localPreSignatures[i] = localPreSignature;
@@ -64,23 +61,17 @@ public class AppletTest extends BaseTest {
 
         pm.setup(encKey, macKey);
 
-
         // Untrusted signing
         for(int i = 0; i < 100; ++i) {
             BigInteger m = ProtocolManager.hash(new byte[32]);
 
-            byte[] w1u1 = pm.sign(
+            BigInteger s2 = pm.sign(
                     new byte[32],
                     cardPreSignatures[i]
             );
-            BigInteger w1 = new BigInteger(1, Arrays.copyOfRange(w1u1, 0, 32));
-            BigInteger u1 = new BigInteger(1, Arrays.copyOfRange(w1u1, 32, 64));
 
-            BigInteger w2 = m.multiply(localPreSignatures[i].o).add(localPreSignatures[i].v).mod(q);
-
-            BigInteger u = u1.add(localPreSignatures[i].u).mod(q);
-            BigInteger w = w1.add(w2).mod(q);
-            BigInteger s = w.multiply(u.modInverse(q)).mod(q);
+            BigInteger s1 = m.multiply(localPreSignatures[i].k).add(localPreSignatures[i].z).mod(q);
+            BigInteger s = s1.add(s2).mod(q);
 
             byte[] signature = ProtocolManager.rawToDer(Rxs[i], s);
 
@@ -89,7 +80,7 @@ public class AppletTest extends BaseTest {
     }
 
     @Test
-    public void testTripleSign() throws Exception {
+    public void testMultTriples() throws Exception {
         BigInteger q = ProtocolManager.G.getCurve().getOrder();
 
         ProtocolManager pm = new ProtocolManager(connect());

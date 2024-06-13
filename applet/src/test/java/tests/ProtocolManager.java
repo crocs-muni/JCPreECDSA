@@ -59,7 +59,7 @@ public class ProtocolManager {
         return ecSpec.getCurve().decodePoint(responseAPDU.getData());
     }
 
-    public byte[] sign(byte[] message, byte[] preSignature) throws Exception {
+    public BigInteger sign(byte[] message, byte[] preSignature) throws Exception {
         byte[] data = Util.concat(message, preSignature);
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
@@ -71,7 +71,7 @@ public class ProtocolManager {
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assertions.assertNotNull(responseAPDU);
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
-        return responseAPDU.getData();
+        return new BigInteger(1, responseAPDU.getData());
     }
 
     public void setT(byte[] triple) throws Exception {

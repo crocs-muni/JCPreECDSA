@@ -170,12 +170,12 @@ public class JCPreECDSA extends Applet {
     }
 
     private void sign(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || 16B IV || 32B u1 || 32B v1 * Rx || 32B o1 || 16B MAC
+        byte[] apduBuffer = apdu.getBuffer(); // 32B MSG || 16B IV || 32B k || 32B z || 16B MAC
 
         if (Util.arrayCompare(lastIv, (short) 0, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16) != -1) {
             ISOException.throwIt(Consts.E_PRESIGNATURE_REUSE);
         }
-        if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) (96 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16 + 96), (short) 16)) {
+        if (!mac.verify(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) (64 + 16), apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16 + 64), (short) 16)) {
             ISOException.throwIt(Consts.E_PRESIGNATURE_INVALID);
         }
         Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), lastIv, (short) 0, (short) 16);
@@ -185,22 +185,17 @@ public class JCPreECDSA extends Applet {
 
         // decrypt in place
         cipher.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 16);
-        cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 96, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16));
+        cipher.doFinal(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 64, apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16));
 
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 * 3 + 16), (short) 32);
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 32);
         bn1.modMult(bn2, curve.rBN);
 
         bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 * 2 + 16), (short) 32);
         bn1.modAdd(bn2, curve.rBN);
 
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 16), (short) 32);
-
-        // w1 = H(m) * o1 + v1 * R.x
         bn1.copyToByteArray(apduBuffer, (short) 0);
-        // u1
-        bn2.copyToByteArray(apduBuffer, (short) 32);
 
-        apdu.setOutgoingAndSend((short) 0, (short) 64);
+        apdu.setOutgoingAndSend((short) 0, (short) 32);
     }
 
     private void sign1(APDU apdu) {

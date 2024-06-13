@@ -11,12 +11,11 @@ import javax.crypto.spec.SecretKeySpec;
 import java.math.BigInteger;
 
 public class PreSignature {
-    public BigInteger u, v, o;
+    public BigInteger k, z;
 
-    public PreSignature(BigInteger u, BigInteger v, BigInteger o) {
-        this.u = u;
-        this.v = v;
-        this.o = o;
+    public PreSignature(BigInteger k, BigInteger z) {
+        this.k = k;
+        this.z = z;
     }
 
     private static byte[] encrypt(byte[] key, byte[] iv, byte[] message) throws Exception {
@@ -39,9 +38,8 @@ public class PreSignature {
     }
 
     public byte[] wrap(byte[] encKey, byte[] macKey, byte[] iv) throws Exception {
-        byte[] payload = ProtocolManager.encodeBigInteger(u);
-        payload = Util.concat(payload, ProtocolManager.encodeBigInteger(v));
-        payload = Util.concat(payload, ProtocolManager.encodeBigInteger(o));
+        byte[] payload = ProtocolManager.encodeBigInteger(k);
+        payload = Util.concat(payload, ProtocolManager.encodeBigInteger(z));
         payload = encrypt(encKey, iv, payload);
         return Util.concat(payload, mac(macKey, payload));
     }
