@@ -23,14 +23,14 @@ public class JCPreECDSA extends Applet {
     private byte[] k2 = new byte[32];
 
     private BigNat bn1, bn2, bn3;
-    private ECPoint point1, point2;
+    private ECPoint point;
     private ECPoint publicKey;
     private BigNat secretKey;
     private BigNat omegaKey;
     private BigNat deltaKey;
     private byte[] t = new byte[192];
     private byte[] u = new byte[192];
-    private BigNat c, c2hat, a, b, a2hat, b2hat;
+    private BigNat c2hat, a2hat, b2hat, pres2;
     private ECPoint R2hat;
     private byte[] Rx = new byte[32];
     private byte[] comm1 = new byte[32];
@@ -137,20 +137,17 @@ public class JCPreECDSA extends Applet {
         bn1 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         bn2 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         bn3 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
-        point1 = new ECPoint(curve);
-        point2 = new ECPoint(curve);
+        point = new ECPoint(curve);
 
         secretKey = new BigNat((short) 32, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
         omegaKey = new BigNat((short) 32, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
         deltaKey = new BigNat((short) 32, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
         publicKey = new ECPoint(curve);
 
-        c = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         c2hat = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
-        a = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
-        b = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         a2hat = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         b2hat = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
+        pres2 = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
         R2hat = new ECPoint(curve);
 
         initialized = true;
@@ -240,11 +237,11 @@ public class JCPreECDSA extends Applet {
         bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16 + 32), (short) 32);
 
         // R2 = c^-1*b2*G
-        point1.setW(curve.G, (short) 0, (short) curve.G.length);
-        point1.multiplication(bn1);
-        point1.multiplication(bn2);
+        point.setW(curve.G, (short) 0, (short) curve.G.length);
+        point.multiplication(bn1);
+        point.multiplication(bn2);
         Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64 + 16), k2, (short) 0, (short) 32);
-        point1.getW(apduBuffer, (short) 32);
+        point.getW(apduBuffer, (short) 32);
 
         apdu.setOutgoingAndSend((short) 0, (short) (65 + 32));
     }
@@ -304,22 +301,23 @@ public class JCPreECDSA extends Applet {
         Util.arrayCopyNonAtomic(ramArray, (short) 0, m, (short) 0, (short) 32);
 
         bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
-        c.fromByteArray(t, (short) 64, (short) 32);
-        c.modAdd(bn1, curve.rBN);
-        bn2.clone(c);
+        bn3.fromByteArray(t, (short) 64, (short) 32);
+        bn3.modAdd(bn1, curve.rBN);
+        bn2.clone(bn3);
         bn2.modInv(curve.rBN);
 
-        point1.setW(curve.G, (short) 0, (short) curve.G.length);
-        point1.multiplication(bn2);
-        point1.multiplication(t, (short) 32, (short) 32);
+        point.setW(curve.G, (short) 0, (short) curve.G.length);
+        point.multiplication(bn2);
+        R2hat.copy(point);
+        point.multiplication(t, (short) 32, (short) 32);
 
         c2hat.fromByteArray(t, (short) 160, (short) 32);
-        bn2.clone(c);
+        bn2.clone(bn3);
         bn2.modMult(deltaKey, curve.rBN);
         c2hat.modSub(bn2, curve.rBN);
 
-        c.copyToByteArray(apduBuffer, (short) 0);
-        point1.getW(apduBuffer, (short) 32);
+        bn3.copyToByteArray(apduBuffer, (short) 0);
+        point.getW(apduBuffer, (short) 32);
         md.reset();
         c2hat.copyToByteArray(ramArray, (short) 0);
         md.doFinal(ramArray, (short) 0, (short) 32, apduBuffer, (short) (32 + 65));
@@ -331,44 +329,55 @@ public class JCPreECDSA extends Applet {
         Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 1), Rx, (short) 0, (short) 32);
         Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 65), comm1, (short) 0, (short) 32);
 
-        point1.setW(curve.G, (short) 0, (short) curve.G.length);
-        c.modInv(curve.rBN);
-        point1.multiplication(c);
         bn1.fromByteArray(t, (short) (4 * 32), (short) 32);
-        point1.multiplication(bn1);
-        point2.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 65);
-        point2.multiplication(deltaKey);
-        point2.negate();
-        point1.add(point2);
-        R2hat.copy(point1);
+        R2hat.multiplication(bn1);
+        point.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 65);
+        point.multiplication(deltaKey);
+        point.negate();
+        R2hat.add(point);
 
-        a.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
-        bn1.fromByteArray(t, (short) 0, (short) 32);
-        a.modAdd(bn1, curve.rBN);
-        bn1.fromByteArray(u, (short) 0, (short) 32);
-        a.modSub(bn1, curve.rBN);
+        // a = a1 + t2.a - u2.a
+        bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
+        bn3.fromByteArray(t, (short) 0, (short) 32);
+        bn1.modAdd(bn3, curve.rBN);
+        bn3.fromByteArray(u, (short) 0, (short) 32);
+        bn1.modSub(bn3, curve.rBN);
 
-        b.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
-        b.modAdd(secretKey, curve.rBN);
-        bn1.fromByteArray(u, (short) 32, (short) 32);
-        b.modSub(bn1, curve.rBN);
+        // b = b1 + x2 - u2.b
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
+        bn2.modAdd(secretKey, curve.rBN);
+        bn3.fromByteArray(u, (short) 32, (short) 32);
+        bn2.modSub(bn3, curve.rBN);
 
+        // a2hat = t2.x - u2.x - delta2 * a
         a2hat.fromByteArray(t, (short) (32 * 3), (short) 32);
-        bn1.fromByteArray(u, (short) (32 * 3), (short) 32);
-        a2hat.modSub(bn1, curve.rBN);
-        bn1.clone(a);
-        bn1.modMult(deltaKey, curve.rBN);
-        a2hat.modSub(bn1, curve.rBN);
+        bn3.fromByteArray(u, (short) (32 * 3), (short) 32);
+        a2hat.modSub(bn3, curve.rBN);
+        bn3.clone(bn1);
+        bn3.modMult(deltaKey, curve.rBN);
+        a2hat.modSub(bn3, curve.rBN);
 
         b2hat.clone(omegaKey);
-        bn1.fromByteArray(u, (short) (32 * 4), (short) 32);
-        b2hat.modSub(bn1, curve.rBN);
-        bn1.clone(b);
-        bn1.modMult(deltaKey, curve.rBN);
-        b2hat.modSub(bn1, curve.rBN);
+        bn3.fromByteArray(u, (short) (32 * 4), (short) 32);
+        b2hat.modSub(bn3, curve.rBN);
+        bn3.clone(bn2);
+        bn3.modMult(deltaKey, curve.rBN);
+        b2hat.modSub(bn3, curve.rBN);
 
-        a.copyToByteArray(apduBuffer, (short) 0);
-        b.copyToByteArray(apduBuffer, (short) 32);
+        // s2' = u2.c + a * u2.b + b * u2.a
+        pres2.fromByteArray(u, (short) (32 * 2), (short) 32);
+        bn3.fromByteArray(u, (short) 32, (short) 32);
+        bn3.modMult(bn1, curve.rBN);
+        pres2.modAdd(bn3, curve.rBN);
+        bn3.fromByteArray(u, (short) 0, (short) 32);
+        bn3.modMult(bn2, curve.rBN);
+        pres2.modAdd(bn3, curve.rBN);
+        // Rx * s2'
+        bn3.fromByteArray(Rx, (short) 0, (short) 32);
+        pres2.modMult(bn3, curve.rBN);
+
+        bn1.copyToByteArray(apduBuffer, (short) 0);
+        bn2.copyToByteArray(apduBuffer, (short) 32);
         c2hat.copyToByteArray(apduBuffer, (short) 64);
         md.reset();
         a2hat.copyToByteArray(ramArray, (short) 0);
@@ -395,9 +404,9 @@ public class JCPreECDSA extends Applet {
         if (!c2hat.equals(curve.rBN)) {
             ISOException.throwIt((short) 0x1234);
         }
-        point1.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 65);
-        point1.negate();
-        if (!point1.isEqual(R2hat)) {
+        point.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 65);
+        point.negate();
+        if (!point.isEqual(R2hat)) {
             ISOException.throwIt((short) 0x1235);
         }
 
@@ -428,21 +437,15 @@ public class JCPreECDSA extends Applet {
             ISOException.throwIt((short) 0x1237);
         }
 
-        bn1.fromByteArray(u, (short) (32 * 2), (short) 32);
-        bn2.fromByteArray(u, (short) 32, (short) 32);
-        bn2.modMult(a, curve.rBN);
-        bn1.modAdd(bn2, curve.rBN);
-        bn2.fromByteArray(u, (short) 0, (short) 32);
-        bn2.modMult(b, curve.rBN);
-        bn1.modAdd(bn2, curve.rBN);
+        // H(m) * t2.a
         bn2.fromByteArray(t, (short) 0, (short) 32);
         bn3.fromByteArray(m, (short) 0, (short) 32);
         bn2.modMult(bn3, curve.rBN);
-        bn3.fromByteArray(Rx, (short) 0, (short) 32);
-        bn1.modMult(bn3, curve.rBN);
-        bn1.modAdd(bn2, curve.rBN);
 
-        apdu.setOutgoingAndSend((short) 0, bn1.copyToByteArray(apduBuffer, (short) 0));
+        // s2 = H(m) * t2.a + s2'
+        pres2.modAdd(bn2, curve.rBN);
+
+        apdu.setOutgoingAndSend((short) 0, pres2.copyToByteArray(apduBuffer, (short) 0));
     }
 
     private void setT(APDU apdu) {
