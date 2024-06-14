@@ -294,19 +294,19 @@ public class JCPreECDSA extends Applet {
         bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
         bn1.add(a2hat);
         if (!bn1.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1230);
+            ISOException.throwIt(Consts.E_MAC_INVALID);
         }
 
         bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
         bn1.add(b2hat);
         if (!bn1.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1235);
+            ISOException.throwIt(Consts.E_MAC_INVALID);
         }
 
         bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 32);
         bn1.add(c2hat);
         if (!bn1.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1236);
+            ISOException.throwIt(Consts.E_MAC_INVALID);
         }
 
         a2hat.copyToByteArray(apduBuffer, (short) 0);
@@ -322,13 +322,13 @@ public class JCPreECDSA extends Applet {
         md.reset();
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 65, ramArray, (short) 0);
         if (Util.arrayCompare(comm, (short) 0, ramArray, (short) 0, (short) 32) != 0) {
-            ISOException.throwIt((short) 0x1112);
+            ISOException.throwIt(Consts.E_COMMITMENT_INVALID);
         }
 
         point.setW(apduBuffer, ISO7816.OFFSET_CDATA, (short) 65);
         point.negate();
         if (!point.isEqual(R2hat)) {
-            ISOException.throwIt((short) 0x1235);
+            ISOException.throwIt(Consts.E_MAC_INVALID);
         }
 
         // H(m) * t2.a
