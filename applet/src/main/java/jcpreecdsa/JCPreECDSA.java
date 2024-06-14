@@ -31,8 +31,7 @@ public class JCPreECDSA extends Applet {
     private byte[] u = new byte[192];
     private BigNat c2hat, a2hat, b2hat, pres2;
     private ECPoint R2hat;
-    private byte[] comm1 = new byte[32];
-    private byte[] comm2 = new byte[32];
+    private byte[] comm = new byte[32];
     private final byte[] ramArray = JCSystem.makeTransientByteArray((short) 65, JCSystem.CLEAR_ON_RESET);
 
     private boolean initialized = false;
@@ -77,9 +76,6 @@ public class JCPreECDSA extends Applet {
                     break;
                 case Consts.INS_SIGN3:
                     sign3(apdu);
-                    break;
-                case Consts.INS_SIGN4:
-                    sign4(apdu);
                     break;
                 default:
                     ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -199,55 +195,44 @@ public class JCPreECDSA extends Applet {
     }
 
     private void sign1(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B m, 32B t1.c
+        byte[] apduBuffer = apdu.getBuffer(); // 32B m || 32B a1 || 32B b1 || 32B t1.c
 
         md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32, ramArray, (short) 0);
         Util.arrayCopyNonAtomic(ramArray, (short) 0, m, (short) 0, (short) 32);
 
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
+        // c = t1.c + t2.c
+        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 3 * 32), (short) 32);
         bn3.fromByteArray(t, (short) 64, (short) 32);
         bn3.modAdd(bn1, curve.rBN);
         bn2.clone(bn3);
-        bn2.modInv(curve.rBN);
+        bn2.modInv(curve.rBN); // c^-1
 
+        // R2 = c^-1 * t_2.b * G
         point.setW(curve.G, (short) 0, (short) curve.G.length);
         point.multiplication(bn2);
         R2hat.copy(point);
         point.multiplication(t, (short) 32, (short) 32);
 
+        // c2hat = t2.z - delta2 * c
         c2hat.fromByteArray(t, (short) 160, (short) 32);
         bn2.clone(bn3);
         bn2.modMult(deltaKey, curve.rBN);
         c2hat.modSub(bn2, curve.rBN);
 
-        bn3.copyToByteArray(apduBuffer, (short) 0);
-        point.getW(apduBuffer, (short) 32);
-        md.reset();
-        c2hat.copyToByteArray(ramArray, (short) 0);
-        md.doFinal(ramArray, (short) 0, (short) 32, apduBuffer, (short) (32 + 65));
-        apdu.setOutgoingAndSend((short) 0, (short) (32 + 65 + 32));
-    }
-
-    private void sign2(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B a1 || 32B b1 || 65B R || H(c1hat, R1hat)
-        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 65), comm1, (short) 0, (short) 32);
-
-        bn1.fromByteArray(t, (short) (4 * 32), (short) 32);
-        R2hat.multiplication(bn1);
-        point.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 65);
-        point.multiplication(deltaKey);
-        point.negate();
-        R2hat.add(point);
+        // a1
+        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
+        // b1
+        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 2 * 32), (short) 32);
+        // copy c to output
+        bn3.copyToByteArray(apduBuffer, (short) 64);
 
         // a = a1 + t2.a - u2.a
-        bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
         bn3.fromByteArray(t, (short) 0, (short) 32);
         bn1.modAdd(bn3, curve.rBN);
         bn3.fromByteArray(u, (short) 0, (short) 32);
         bn1.modSub(bn3, curve.rBN);
 
         // b = b1 + x2 - u2.b
-        bn2.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
         bn2.modAdd(secretKey, curve.rBN);
         bn3.fromByteArray(u, (short) 32, (short) 32);
         bn2.modSub(bn3, curve.rBN);
@@ -260,6 +245,7 @@ public class JCPreECDSA extends Applet {
         bn3.modMult(deltaKey, curve.rBN);
         a2hat.modSub(bn3, curve.rBN);
 
+        // b2hat = omega2 - u2.y - delta2 * b
         b2hat.clone(omegaKey);
         bn3.fromByteArray(u, (short) (32 * 4), (short) 32);
         b2hat.modSub(bn3, curve.rBN);
@@ -275,78 +261,83 @@ public class JCPreECDSA extends Applet {
         bn3.fromByteArray(u, (short) 0, (short) 32);
         bn3.modMult(bn2, curve.rBN);
         pres2.modAdd(bn3, curve.rBN);
-        // Rx * s2'
-        bn3.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 32 + 1), (short) 32);
-        pres2.modMult(bn3, curve.rBN);
 
-        bn1.copyToByteArray(apduBuffer, (short) 0);
-        bn2.copyToByteArray(apduBuffer, (short) 32);
-        c2hat.copyToByteArray(apduBuffer, (short) 64);
+        bn1.copyToByteArray(apduBuffer, (short) 0); // copy a to output
+        bn2.copyToByteArray(apduBuffer, (short) 32); // copy b to output
+        point.getW(apduBuffer, (short) 96); // copy R2 to output
+
         md.reset();
         a2hat.copyToByteArray(ramArray, (short) 0);
         md.update(ramArray, (short) 0, (short) 32);
         b2hat.copyToByteArray(ramArray, (short) 0);
         md.update(ramArray, (short) 0, (short) 32);
-        R2hat.getW(ramArray, (short) 0);
-        md.doFinal(ramArray, (short) 0, (short) 65, apduBuffer, (short) 96);
-        apdu.setOutgoingAndSend((short) 0, (short) 128);
+        c2hat.copyToByteArray(ramArray, (short) 0);
+        md.doFinal(ramArray, (short) 0, (short) 32, apduBuffer, (short) (96 + 65));
+        apdu.setOutgoingAndSend((short) 0, (short) (96 + 65 + 32));
+    }
+
+    private void sign2(APDU apdu) {
+        byte[] apduBuffer = apdu.getBuffer(); // 32B a1hat || 32B b1hat || 32B c1hat || 65B R || H(R1hat)
+        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 3 * 32 + 65), comm, (short) 0, (short) 32);
+
+        // Rx * s2'
+        bn3.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 3 * 32 + 1), (short) 32);
+        pres2.modMult(bn3, curve.rBN);
+
+        bn1.fromByteArray(t, (short) (4 * 32), (short) 32);
+        R2hat.multiplication(bn1);
+        point.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 96), (short) 65);
+        point.multiplication(deltaKey);
+        point.negate();
+        R2hat.add(point);
+
+        bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
+        bn1.add(a2hat);
+        if (!bn1.equals(curve.rBN)) {
+            ISOException.throwIt((short) 0x1230);
+        }
+
+        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
+        bn1.add(b2hat);
+        if (!bn1.equals(curve.rBN)) {
+            ISOException.throwIt((short) 0x1235);
+        }
+
+        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 64), (short) 32);
+        bn1.add(c2hat);
+        if (!bn1.equals(curve.rBN)) {
+            ISOException.throwIt((short) 0x1236);
+        }
+
+        a2hat.copyToByteArray(apduBuffer, (short) 0);
+        b2hat.copyToByteArray(apduBuffer, (short) 32);
+        c2hat.copyToByteArray(apduBuffer, (short) 64);
+        R2hat.getW(apduBuffer, (short) 96);
+        apdu.setOutgoingAndSend((short) 0, (short) (96 + 65));
     }
 
     private void sign3(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B c1hat || 65B R1hat || 32B H(a1hat, b1hat)
+        byte[] apduBuffer = apdu.getBuffer(); // 65B R1hat
 
         md.reset();
-        md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) (32 + 65), ramArray, (short) 0);
-        if (Util.arrayCompare(comm1, (short) 0, ramArray, (short) 0, (short) 32) != 0) {
+        md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 65, ramArray, (short) 0);
+        if (Util.arrayCompare(comm, (short) 0, ramArray, (short) 0, (short) 32) != 0) {
             ISOException.throwIt((short) 0x1112);
         }
-        Util.arrayCopyNonAtomic(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32 + 65), comm2, (short) 0, (short) 32);
 
-        bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
-        c2hat.add(bn1);
-        if (!c2hat.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1234);
-        }
-        point.setW(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 65);
+        point.setW(apduBuffer, ISO7816.OFFSET_CDATA, (short) 65);
         point.negate();
         if (!point.isEqual(R2hat)) {
             ISOException.throwIt((short) 0x1235);
         }
 
-        a2hat.copyToByteArray(apduBuffer, (short) 0);
-        b2hat.copyToByteArray(apduBuffer, (short) 32);
-        R2hat.getW(apduBuffer, (short) 64);
-
-        apdu.setOutgoingAndSend((short) 0, (short) (32 + 32 + 65));
-    }
-
-    private void sign4(APDU apdu) {
-        byte[] apduBuffer = apdu.getBuffer(); // 32B a1hat || 32B b1hat
-
-        md.reset();
-        md.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) (32 + 32), ramArray, (short) 0);
-        if (Util.arrayCompare(comm2, (short) 0, ramArray, (short) 0, (short) 32) != 0) {
-            ISOException.throwIt((short) 0x1111);
-        }
-
-        bn1.fromByteArray(apduBuffer, ISO7816.OFFSET_CDATA, (short) 32);
-        a2hat.add(bn1);
-        if (!c2hat.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1236);
-        }
-        bn1.fromByteArray(apduBuffer, (short) (ISO7816.OFFSET_CDATA + 32), (short) 32);
-        b2hat.add(bn1);
-        if (!c2hat.equals(curve.rBN)) {
-            ISOException.throwIt((short) 0x1237);
-        }
-
         // H(m) * t2.a
+        bn1.fromByteArray(m, (short) 0, (short) 32);
         bn2.fromByteArray(t, (short) 0, (short) 32);
-        bn3.fromByteArray(m, (short) 0, (short) 32);
-        bn2.modMult(bn3, curve.rBN);
+        bn1.modMult(bn2, curve.rBN);
 
         // s2 = H(m) * t2.a + s2'
-        pres2.modAdd(bn2, curve.rBN);
+        pres2.modAdd(bn1, curve.rBN);
 
         apdu.setOutgoingAndSend((short) 0, pres2.copyToByteArray(apduBuffer, (short) 0));
     }

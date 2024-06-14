@@ -10,7 +10,6 @@ public class Consts {
     public static final byte INS_SIGN1 = (byte) 0x04;
     public static final byte INS_SIGN2 = (byte) 0x05;
     public static final byte INS_SIGN3 = (byte) 0x06;
-    public static final byte INS_SIGN4 = (byte) 0x07;
 
     public final static short E_ALREADY_INITIALIZED = (short) 0xee00;
     public final static short E_PRESIGNATURE_REUSE = (short) 0xee01;

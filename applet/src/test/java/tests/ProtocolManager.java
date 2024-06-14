@@ -100,13 +100,16 @@ public class ProtocolManager {
         Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
     }
 
-    public byte[] sign1(byte[] message, BigInteger t1c) throws Exception {
+    public byte[] sign1(byte[] message, BigInteger a1, BigInteger b1, BigInteger t1c) throws Exception {
+        byte[] data = Util.concat(message, encodeBigInteger(a1));
+        data = Util.concat(data, encodeBigInteger(b1));
+        data = Util.concat(data, encodeBigInteger(t1c));
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SIGN1,
                 0,
                 0,
-                Util.concat(message, encodeBigInteger(t1c))
+                data
         );
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assertions.assertNotNull(responseAPDU);
@@ -114,8 +117,9 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] sign2(BigInteger a1, BigInteger b1, ECPoint R, BigInteger commitment) throws Exception {
-        byte[] data = Util.concat(encodeBigInteger(a1), encodeBigInteger(b1));
+    public byte[] sign2(BigInteger a1hat, BigInteger b1hat, BigInteger c1hat, ECPoint R, BigInteger commitment) throws Exception {
+        byte[] data = Util.concat(encodeBigInteger(a1hat), encodeBigInteger(b1hat));
+        data = Util.concat(data, encodeBigInteger(c1hat));
         data = Util.concat(data, R.getEncoded(false));
         data = Util.concat(data, encodeBigInteger(commitment));
         CommandAPDU cmd = new CommandAPDU(
@@ -131,30 +135,13 @@ public class ProtocolManager {
         return responseAPDU.getData();
     }
 
-    public byte[] sign3(BigInteger c1hat, ECPoint R1hat, BigInteger commitment) throws Exception {
-        byte[] data = Util.concat(ProtocolManager.encodeBigInteger(c1hat), R1hat.getEncoded(false));
-        data = Util.concat(data, encodeBigInteger(commitment));
+    public byte[] sign3(ECPoint R1hat) throws Exception {
         CommandAPDU cmd = new CommandAPDU(
                 Consts.CLA_JCPREECDSA,
                 Consts.INS_SIGN3,
                 0,
                 0,
-                data
-        );
-        ResponseAPDU responseAPDU = cm.transmit(cmd);
-        Assertions.assertNotNull(responseAPDU);
-        Assertions.assertEquals(ISO7816.SW_NO_ERROR & 0xffff, responseAPDU.getSW());
-        return responseAPDU.getData();
-    }
-
-    public byte[] sign4(BigInteger a1hat, BigInteger b1hat) throws Exception {
-        byte[] data = Util.concat(ProtocolManager.encodeBigInteger(a1hat), ProtocolManager.encodeBigInteger(b1hat));
-        CommandAPDU cmd = new CommandAPDU(
-                Consts.CLA_JCPREECDSA,
-                Consts.INS_SIGN4,
-                0,
-                0,
-                data
+                R1hat.getEncoded(false)
         );
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assertions.assertNotNull(responseAPDU);

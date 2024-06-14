@@ -1,7 +1,6 @@
 package tests;
 
 import cz.muni.fi.crocs.rcard.client.CardType;
-import cz.muni.fi.crocs.rcard.client.Util;
 import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.*;
 
@@ -126,48 +125,40 @@ public class AppletTest extends BaseTest {
             pm.setT(wts[i]);
             pm.setU(wus[i]);
 
-            // Host sends t1.c to card
-            byte[] recv = pm.sign1(new byte[32], t1s[i].c);
-            // Card sends c, R2, and H(c2hat)
-            BigInteger c = new BigInteger(1, Arrays.copyOfRange(recv, (short) 0, (short) 32));
-            ECPoint R2 = ProtocolManager.G.getCurve().decodePoint(Arrays.copyOfRange(recv, (short) 32, (short) 32 + 65));
-            byte[] comm1 = Arrays.copyOfRange(recv, (short) (32 + 65), (short) (32 + 65 + 32));
+            BigInteger a1 = t1s[i].a.subtract(u1s[i].a).mod(q);
+            BigInteger b1 = x1.subtract(u1s[i].b).mod(q);
+            // Host sends m, t1.c, a1, b1 to card
+            byte[] recv = pm.sign1(new byte[32], a1, b1, t1s[i].c);
+            // Card sends a, b, c, R2, and H(a2hat, b2hat, c2hat)
+            BigInteger a = new BigInteger(1, Arrays.copyOfRange(recv, (short) 0, (short) 32));
+            BigInteger b = new BigInteger(1, Arrays.copyOfRange(recv, (short) 32, (short) 64));
+            BigInteger c = new BigInteger(1, Arrays.copyOfRange(recv, (short) 64, (short) 96));
+            ECPoint R2 = ProtocolManager.G.getCurve().decodePoint(Arrays.copyOfRange(recv, (short) 96, (short) (96 + 65)));
+            byte[] comm = Arrays.copyOfRange(recv, (short) (96 + 65), (short) (96 + 65 + 32));
 
             ECPoint R = ProtocolManager.G.multiply(c.modInverse(q)).multiply(t1s[i].b).add(R2);
             BigInteger Rx = R.normalize().getRawXCoord().toBigInteger();
+            BigInteger a1hat = t1s[i].x.subtract(u1s[i].x).subtract(delta1.multiply(a)).mod(q);
+            BigInteger b1hat = omega1.subtract(u1s[i].y).subtract(delta1.multiply(b)).mod(q);
             BigInteger c1hat = (t1s[i].z.subtract(delta1.multiply(c)).mod(q));
             ECPoint R1hat = ProtocolManager.G.multiply(c.modInverse(q)).multiply(t1s[i].y).subtract(R.multiply(delta1));
 
-            BigInteger a1 = t1s[i].a.subtract(u1s[i].a).mod(q);
-            BigInteger b1 = x1.subtract(u1s[i].b).mod(q);
-
-            // Host sends a1, b1, R, H(c1hat, R1hat)
-            recv = pm.sign2(a1, b1, R, ProtocolManager.hash(Util.concat(ProtocolManager.encodeBigInteger(c1hat), R1hat.getEncoded(false))));
-            // Card sends a, b, c2hat, H(a2hat, b2hat, R2hat)
-            BigInteger a = new BigInteger(1, Arrays.copyOfRange(recv, (short) 0, (short) 32));
-            BigInteger b = new BigInteger(1, Arrays.copyOfRange(recv, (short) 32, (short) 64));
-            BigInteger c2hat = new BigInteger(1, Arrays.copyOfRange(recv, 64, 96));
-            byte[] comm2 = Arrays.copyOfRange(recv, (short) 96, (short) 128);
-
-            assert ProtocolManager.hash(ProtocolManager.encodeBigInteger(c2hat)).equals(new BigInteger(1, comm1));
-            assert c1hat.add(c2hat).mod(q).equals(BigInteger.ZERO);
-            BigInteger a1hat = t1s[i].x.subtract(u1s[i].x).subtract(delta1.multiply(a)).mod(q);
-            BigInteger b1hat = omega1.subtract(u1s[i].y).subtract(delta1.multiply(b)).mod(q);
-
-            // Host sends c1hat, R1hat, H(a1hat, b1hat)
-            recv = pm.sign3(c1hat, R1hat, ProtocolManager.hash(Util.concat(ProtocolManager.encodeBigInteger(a1hat), ProtocolManager.encodeBigInteger(b1hat))));
-            // Card sends a2hat, b2hat, R2hat
+            // Host sends a1hat, b1hat, c1hat, R, H(R1hat)
+            recv = pm.sign2(a1hat, b1hat, c1hat, R, ProtocolManager.hash(R1hat.getEncoded(false)));
+            // Card sends a2hat, b2hat, c2hat, R2hat
             BigInteger a2hat = new BigInteger(1, Arrays.copyOfRange(recv, 0, 32));
             BigInteger b2hat = new BigInteger(1, Arrays.copyOfRange(recv, 32, 64));
-            ECPoint R2hat = ProtocolManager.G.getCurve().decodePoint(Arrays.copyOfRange(recv, 64, 64 + 65));
+            BigInteger c2hat = new BigInteger(1, Arrays.copyOfRange(recv, 64, 96));
+            ECPoint R2hat = ProtocolManager.G.getCurve().decodePoint(Arrays.copyOfRange(recv, 96, 96 + 65));
 
-            assert ProtocolManager.hash(Util.concat(ProtocolManager.encodeBigInteger(a2hat), ProtocolManager.encodeBigInteger(b2hat), R2hat.getEncoded(false))).equals(new BigInteger(1, comm2));
+            assert ProtocolManager.hash(Arrays.copyOfRange(recv, (short) 0, (short) 96)).equals(new BigInteger(1, comm));
             assert R1hat.equals(R2hat.negate());
             assert a1hat.add(a2hat).mod(q).equals(BigInteger.ZERO);
             assert b1hat.add(b2hat).mod(q).equals(BigInteger.ZERO);
+            assert c1hat.add(c2hat).mod(q).equals(BigInteger.ZERO);
 
-            // Host sends a1hat, b1hat
-            recv = pm.sign4(a1hat, b1hat);
+            // Host sends R1hat
+            recv = pm.sign3(R1hat);
             // Card sends s2
             BigInteger s2 = new BigInteger(1, recv);
 
